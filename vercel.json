@@ -1,10 +1,25 @@
+
 {
-    "version": 2,
-    "builds": [{"src": "server.js","use": "@vercel/node"}],
-    "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "server.js"
-        }
-    ]
+  "version": 2,
+  "name": "pos-system-backend",
+  "builds": [
+    {
+      "src": "server-new.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/server-new.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "server-new.js": {
+      "maxDuration": 30
+    }
+  }
 }
