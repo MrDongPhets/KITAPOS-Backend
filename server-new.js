@@ -106,6 +106,7 @@ app.use((req, res, next) => {
 // Environment validation
 function validateEnvVars() {
   console.log('🔍 Checking environment variables...');
+  console.log('   Environment:', process.env.NODE_ENV || 'development');
   
   const required = {
     'SUPABASE_URL': process.env.SUPABASE_URL,
@@ -118,17 +119,18 @@ function validateEnvVars() {
   Object.entries(required).forEach(([key, value]) => {
     if (!value) {
       missing.push(key);
+      console.log(`   ❌ Missing: ${key}`);
     } else {
-      console.log(`✅ ${key}: ${value.substring(0, 10)}...`);
+      console.log(`   ✅ ${key}: ${value.substring(0, 10)}...`);
     }
   });
   
   if (missing.length > 0) {
-    console.error('❌ Missing required environment variables:', missing);
+    console.error('   ❌ Missing required environment variables:', missing);
     return false;
   }
 
-  console.log('✅ All environment variables validated');
+  console.log('   ✅ All environment variables validated');
   return true;
 }
 
@@ -139,11 +141,14 @@ async function initializeSupabase() {
     console.log('🔌 Initializing Supabase client...');
     
     if (!validateEnvVars()) {
-      throw new Error('Environment validation failed');
+      throw new Error('Environment validation failed - missing required variables');
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    console.log('📡 Supabase URL:', supabaseUrl);
+    console.log('🔑 Service Key exists:', !!supabaseServiceKey);
     
     supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
@@ -154,20 +159,21 @@ async function initializeSupabase() {
     
     console.log('✅ Supabase client created');
     
-    // Test connection and ensure demo data
+    // Test connection
     const testResult = await testDatabaseConnection();
     
     if (testResult.success) {
       console.log('✅ Database connection verified');
-      await ensureDemoData();
     } else {
-      console.log('⚠️ Database connection issues:', testResult.error);
+      console.log('❌ Database connection failed:', testResult.error);
+      throw new Error(`Database connection failed: ${testResult.error}`);
     }
     
     return supabase;
     
   } catch (error) {
     console.error('❌ Failed to initialize Supabase:', error.message);
+    console.error('Stack trace:', error.stack);
     return null;
   }
 }
