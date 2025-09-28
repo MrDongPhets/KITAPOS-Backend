@@ -1,3 +1,4 @@
+// src/routes/index.js - Fixed to show all correct endpoints
 const express = require('express');
 const router = express.Router();
 const { API_VERSION, DEMO_CREDENTIALS } = require('../config/constants');
@@ -6,15 +7,14 @@ const authRoutes = require('./auth');
 const adminRoutes = require('./admin');
 const healthRoute = require('./health');
 
-// Root endpoint
+// Root endpoint - FIXED to show actual available endpoints
 router.get('/', (req, res) => {
   res.json({ 
     message: 'POS System API - Modular Version',
     status: 'active',
     timestamp: new Date().toISOString(),
     version: API_VERSION,
-    port: process.env.PORT || 3001,
-    demo_credentials: DEMO_CREDENTIALS,
+    environment: process.env.NODE_ENV || 'production',
     endpoints: {
       health: 'GET /health',
       auth: {
@@ -26,14 +26,16 @@ router.get('/', (req, res) => {
       },
       admin: {
         companies: 'GET /admin/companies',
+        users: 'GET /admin/users',
         userStats: 'GET /admin/stats/users',
         subscriptionStats: 'GET /admin/stats/subscriptions'
       }
-    }
+    },
+    demo_credentials: process.env.NODE_ENV !== 'production' ? DEMO_CREDENTIALS : 'Hidden in production'
   });
 });
 
-// Mount routes
+// Mount routes - ensure these are all properly mounted
 router.use('/health', healthRoute);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
