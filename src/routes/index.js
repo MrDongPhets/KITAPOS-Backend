@@ -6,6 +6,7 @@ const { API_VERSION, DEMO_CREDENTIALS } = require('../config/constants');
 const authRoutes = require('./auth');
 const adminRoutes = require('./admin');
 const healthRoute = require('./health');
+const clientRoutes = require('./client');
 
 // Root endpoint - FIXED to show actual available endpoints
 router.get('/', (req, res) => {
@@ -39,5 +40,6 @@ router.get('/', (req, res) => {
 router.use('/health', healthRoute);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
+router.use('/client', clientRoutes);
 
 module.exports = router;

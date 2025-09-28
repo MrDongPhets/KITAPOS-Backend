@@ -24,4 +24,6 @@ router.post('/register-company', registerCompany);
 router.get('/verify', authenticateToken, verifyToken);
 router.post('/cleanup', authenticateToken, cleanup);
 
+
+
 module.exports = router;
