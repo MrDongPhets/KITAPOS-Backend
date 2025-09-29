@@ -1,0 +1,419 @@
+const { getSupabase } = require('../../config/database');
+
+async function getProducts(req, res) {
+  try {
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('📦 Getting products for company:', companyId);
+
+    // First get store IDs for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId);
+
+    const storeIds = stores?.map(store => store.id) || [];
+
+    if (storeIds.length === 0) {
+      return res.json({ products: [], count: 0 });
+    }
+
+    // Get products with categories
+    const { data: products, error, count } = await supabase
+      .from('products')
+      .select(`
+        *,
+        categories(id, name, color, icon)
+      `, { count: 'exact' })
+      .in('store_id', storeIds)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log('✅ Products found:', products?.length || 0);
+
+    res.json({
+      products: products || [],
+      count: count || 0,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Get products error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch products',
+      code: 'PRODUCTS_ERROR'
+    });
+  }
+}
+
+async function getProduct(req, res) {
+  try {
+    const { id } = req.params;
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('📦 Getting product:', id);
+
+    // Get store IDs for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId);
+
+    const storeIds = stores?.map(store => store.id) || [];
+
+    const { data: product, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        categories(id, name, color, icon)
+      `)
+      .eq('id', id)
+      .in('store_id', storeIds)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !product) {
+      return res.status(404).json({ 
+        error: 'Product not found',
+        code: 'PRODUCT_NOT_FOUND'
+      });
+    }
+
+    res.json({ product });
+
+  } catch (error) {
+    console.error('Get product error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch product',
+      code: 'PRODUCT_ERROR'
+    });
+  }
+}
+
+async function createProduct(req, res) {
+  try {
+    const companyId = req.user.company_id;
+    const userId = req.user.id;
+    const supabase = getSupabase();
+
+    const {
+      name,
+      description,
+      sku,
+      barcode,
+      category_id,
+      store_id,
+      default_price,
+      manila_price,
+      delivery_price,
+      wholesale_price,
+      stock_quantity,
+      min_stock_level,
+      max_stock_level,
+      unit,
+      weight,
+      dimensions,
+      image_url,
+      tags
+    } = req.body;
+
+    console.log('📦 Creating product:', name);
+
+    // Validate required fields
+    if (!name || !default_price || !store_id) {
+      return res.status(400).json({
+        error: 'Name, default price, and store are required',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Verify store belongs to company
+    const { data: store } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('id', store_id)
+      .eq('company_id', companyId)
+      .single();
+
+    if (!store) {
+      return res.status(400).json({
+        error: 'Invalid store for this company',
+        code: 'INVALID_STORE'
+      });
+    }
+
+    // Generate SKU if not provided
+    let finalSku = sku;
+    if (!finalSku) {
+      const timestamp = Date.now().toString().slice(-6);
+      const namePrefix = name.substring(0, 3).toUpperCase();
+      finalSku = `${namePrefix}${timestamp}`;
+    }
+
+    // Check if SKU already exists
+    const { data: existingSku } = await supabase
+      .from('products')
+      .select('id')
+      .eq('sku', finalSku)
+      .single();
+
+    if (existingSku) {
+      return res.status(409).json({
+        error: 'SKU already exists',
+        code: 'SKU_EXISTS'
+      });
+    }
+
+    // Create product
+    const { data: product, error } = await supabase
+      .from('products')
+      .insert([{
+        name: name.trim(),
+        description: description?.trim() || null,
+        sku: finalSku,
+        barcode: barcode || null,
+        category_id: category_id || null,
+        store_id,
+        default_price: parseFloat(default_price),
+        manila_price: manila_price ? parseFloat(manila_price) : null,
+        delivery_price: delivery_price ? parseFloat(delivery_price) : null,
+        wholesale_price: wholesale_price ? parseFloat(wholesale_price) : null,
+        stock_quantity: parseInt(stock_quantity || 0),
+        min_stock_level: parseInt(min_stock_level || 5),
+        max_stock_level: parseInt(max_stock_level || 100),
+        unit: unit || 'pcs',
+        weight: weight ? parseFloat(weight) : null,
+        dimensions: dimensions || null,
+        image_url: image_url || null,
+        tags: tags || null,
+        created_by: userId,
+        is_active: true
+      }])
+      .select(`
+        *,
+        categories(id, name, color, icon)
+      `)
+      .single();
+
+    if (error) {
+      console.error('Create product error:', error);
+      throw error;
+    }
+
+    console.log('✅ Product created:', product.name);
+
+    res.status(201).json({
+      message: 'Product created successfully',
+      product
+    });
+
+  } catch (error) {
+    console.error('Create product error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create product',
+      code: 'CREATE_PRODUCT_ERROR'
+    });
+  }
+}
+
+async function updateProduct(req, res) {
+  try {
+    const { id } = req.params;
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('📦 Updating product:', id);
+
+    // Get store IDs for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId);
+
+    const storeIds = stores?.map(store => store.id) || [];
+
+    // Verify product exists and belongs to company
+    const { data: existingProduct } = await supabase
+      .from('products')
+      .select('id, sku')
+      .eq('id', id)
+      .in('store_id', storeIds)
+      .single();
+
+    if (!existingProduct) {
+      return res.status(404).json({ 
+        error: 'Product not found',
+        code: 'PRODUCT_NOT_FOUND'
+      });
+    }
+
+    const updateData = { ...req.body };
+    delete updateData.id; // Remove id from update data
+    delete updateData.created_by; // Don't allow changing creator
+    delete updateData.created_at; // Don't allow changing creation date
+
+    // If SKU is being changed, check uniqueness
+    if (updateData.sku && updateData.sku !== existingProduct.sku) {
+      const { data: existingSku } = await supabase
+        .from('products')
+        .select('id')
+        .eq('sku', updateData.sku)
+        .neq('id', id)
+        .single();
+
+      if (existingSku) {
+        return res.status(409).json({
+          error: 'SKU already exists',
+          code: 'SKU_EXISTS'
+        });
+      }
+    }
+
+    // Convert numeric fields
+    if (updateData.default_price) updateData.default_price = parseFloat(updateData.default_price);
+    if (updateData.manila_price) updateData.manila_price = parseFloat(updateData.manila_price);
+    if (updateData.delivery_price) updateData.delivery_price = parseFloat(updateData.delivery_price);
+    if (updateData.wholesale_price) updateData.wholesale_price = parseFloat(updateData.wholesale_price);
+    if (updateData.stock_quantity !== undefined) updateData.stock_quantity = parseInt(updateData.stock_quantity);
+    if (updateData.min_stock_level) updateData.min_stock_level = parseInt(updateData.min_stock_level);
+    if (updateData.max_stock_level) updateData.max_stock_level = parseInt(updateData.max_stock_level);
+    if (updateData.weight) updateData.weight = parseFloat(updateData.weight);
+
+    updateData.updated_at = new Date().toISOString();
+
+    const { data: product, error } = await supabase
+      .from('products')
+      .update(updateData)
+      .eq('id', id)
+      .select(`
+        *,
+        categories(id, name, color, icon)
+      `)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    console.log('✅ Product updated:', product.name);
+
+    res.json({
+      message: 'Product updated successfully',
+      product
+    });
+
+  } catch (error) {
+    console.error('Update product error:', error);
+    res.status(500).json({ 
+      error: 'Failed to update product',
+      code: 'UPDATE_PRODUCT_ERROR'
+    });
+  }
+}
+
+async function deleteProduct(req, res) {
+  try {
+    const { id } = req.params;
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('📦 Deleting product:', id);
+
+    // Get store IDs for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId);
+
+    const storeIds = stores?.map(store => store.id) || [];
+
+    // Soft delete - set is_active to false
+    const { data: product, error } = await supabase
+      .from('products')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .in('store_id', storeIds)
+      .select('name')
+      .single();
+
+    if (error || !product) {
+      return res.status(404).json({ 
+        error: 'Product not found',
+        code: 'PRODUCT_NOT_FOUND'
+      });
+    }
+
+    console.log('✅ Product deleted (soft):', product.name);
+
+    res.json({
+      message: 'Product deleted successfully',
+      product_name: product.name
+    });
+
+  } catch (error) {
+    console.error('Delete product error:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete product',
+      code: 'DELETE_PRODUCT_ERROR'
+    });
+  }
+}
+
+async function getCategories(req, res) {
+  try {
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('📦 Getting categories for company:', companyId);
+
+    // Get store IDs for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId);
+
+    const storeIds = stores?.map(store => store.id) || [];
+
+    if (storeIds.length === 0) {
+      return res.json({ categories: [] });
+    }
+
+    const { data: categories, error } = await supabase
+      .from('categories')
+      .select('*')
+      .in('store_id', storeIds)
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({ categories: categories || [] });
+
+  } catch (error) {
+    console.error('Get categories error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch categories',
+      code: 'CATEGORIES_ERROR'
+    });
+  }
+}
+
+module.exports = {
+  getProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getCategories
+};
