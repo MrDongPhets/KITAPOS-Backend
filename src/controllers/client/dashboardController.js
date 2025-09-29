@@ -1,75 +1,86 @@
-// src/controllers/client/dashboardController.js - FIXED VERSION
-const { getSupabase } = require('../../config/database');
+// Update your src/controllers/client/dashboardController.js to support store filtering
 
 async function getDashboardOverview(req, res) {
   try {
     const companyId = req.user.company_id;
+    const storeFilter = req.query.store_id; // Get store filter from query params
     const supabase = getSupabase();
 
-    console.log('📊 Getting dashboard overview for company:', companyId);
+    console.log('📊 Getting dashboard overview for company:', companyId, 'store:', storeFilter || 'ALL');
 
-    // Get today's sales total
+    // Get stores for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id, name')
+      .eq('company_id', companyId);
+
+    const storeIds = storeFilter ? [storeFilter] : stores?.map(store => store.id) || [];
+
+    if (storeIds.length === 0) {
+      return res.json({
+        overview: { totalSales: 0, totalProducts: 0, totalStaff: 0, lowStockItems: 0 }
+      });
+    }
+
+    // Get today's sales total (filtered by store if specified)
     const today = new Date().toISOString().split('T')[0];
-    const { data: todaySales } = await supabase
+    let salesQuery = supabase
       .from('sales')
       .select('total_amount')
       .eq('company_id', companyId)
       .gte('created_at', today + 'T00:00:00.000Z')
       .lt('created_at', today + 'T23:59:59.999Z');
 
-    const totalSales = todaySales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount || 0), 0) || 0;
-
-    // First get store IDs for this company
-    const { data: stores } = await supabase
-      .from('stores')
-      .select('id')
-      .eq('company_id', companyId);
-
-    const storeIds = stores?.map(store => store.id) || [];
-
-    // Get total products count
-    let totalProducts = 0;
-    if (storeIds.length > 0) {
-      const { count } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true)
-        .in('store_id', storeIds);
-      
-      totalProducts = count || 0;
+    if (storeFilter) {
+      salesQuery = salesQuery.eq('store_id', storeFilter);
     }
 
-    // Get total staff count
-    const { count: totalStaff } = await supabase
+    const { data: todaySales } = await salesQuery;
+    const totalSales = todaySales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount || 0), 0) || 0;
+
+    // Get total products count (filtered by store)
+    const { count: totalProducts } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .in('store_id', storeIds);
+
+    // Get staff count (filtered by store if specified)
+    let staffQuery = supabase
       .from('staff')
       .select('*', { count: 'exact', head: true })
       .eq('company_id', companyId)
       .eq('is_active', true);
 
-    // Get low stock items count
-    let lowStockCount = 0;
-    if (storeIds.length > 0) {
-      const { data: lowStockItems } = await supabase
-        .from('products')
-        .select('id, stock_quantity, min_stock_level')
-        .eq('is_active', true)
-        .in('store_id', storeIds);
-
-      lowStockCount = lowStockItems?.filter(item => 
-        item.stock_quantity <= item.min_stock_level
-      ).length || 0;
+    if (storeFilter) {
+      staffQuery = staffQuery.eq('store_id', storeFilter);
     }
 
-    console.log('✅ Dashboard overview:', { totalSales, totalProducts, totalStaff, lowStockCount });
+    const { count: totalStaff } = await staffQuery;
 
-    res.json({
-      overview: {
-        totalSales,
-        totalProducts,
-        totalStaff: totalStaff || 0,
-        lowStockItems: lowStockCount
-      }
-    });
+    // Get low stock items count (filtered by store)
+    const { data: lowStockItems } = await supabase
+      .from('products')
+      .select('id, stock_quantity, min_stock_level')
+      .eq('is_active', true)
+      .in('store_id', storeIds);
+
+    const lowStockCount = lowStockItems?.filter(item => 
+      item.stock_quantity <= item.min_stock_level
+    ).length || 0;
+
+    const overview = {
+      totalSales,
+      totalProducts: totalProducts || 0,
+      totalStaff: totalStaff || 0,
+      lowStockItems: lowStockCount,
+      storeFilter: storeFilter || null,
+      storesIncluded: storeFilter ? 1 : storeIds.length
+    };
+
+    console.log('✅ Dashboard overview:', overview);
+
+    res.json({ overview });
 
   } catch (error) {
     console.error('Dashboard overview error:', error);
@@ -83,22 +94,31 @@ async function getDashboardOverview(req, res) {
 async function getRecentSales(req, res) {
   try {
     const companyId = req.user.company_id;
+    const storeFilter = req.query.store_id;
     const supabase = getSupabase();
 
-    console.log('📊 Getting recent sales for company:', companyId);
+    console.log('📊 Getting recent sales for company:', companyId, 'store:', storeFilter || 'ALL');
 
-    const { data: recentSales, error } = await supabase
+    let salesQuery = supabase
       .from('sales')
       .select(`
         id,
         total_amount,
         items_count,
         created_at,
-        staff!inner(name)
+        store_id,
+        staff!inner(name),
+        stores!inner(name)
       `)
       .eq('company_id', companyId)
       .order('created_at', { ascending: false })
       .limit(5);
+
+    if (storeFilter) {
+      salesQuery = salesQuery.eq('store_id', storeFilter);
+    }
+
+    const { data: recentSales, error } = await salesQuery;
 
     if (error) {
       console.error('Recent sales query error:', error);
@@ -110,7 +130,8 @@ async function getRecentSales(req, res) {
       date: sale.created_at,
       amount: parseFloat(sale.total_amount),
       items: sale.items_count || 1,
-      staff: sale.staff?.name || 'Unknown'
+      staff: sale.staff?.name || 'Unknown',
+      store: sale.stores?.name || 'Unknown Store'
     })) || [];
 
     console.log('✅ Recent sales found:', formattedSales.length);
@@ -129,55 +150,60 @@ async function getRecentSales(req, res) {
 async function getLowStockProducts(req, res) {
   try {
     const companyId = req.user.company_id;
+    const storeFilter = req.query.store_id;
     const supabase = getSupabase();
 
-    console.log('📊 Getting low stock products for company:', companyId);
+    console.log('📊 Getting low stock products for company:', companyId, 'store:', storeFilter || 'ALL');
 
-    // First get store IDs for this company
+    // Get stores for this company
     const { data: stores } = await supabase
       .from('stores')
       .select('id')
       .eq('company_id', companyId);
 
-    const storeIds = stores?.map(store => store.id) || [];
+    const storeIds = storeFilter ? [storeFilter] : stores?.map(store => store.id) || [];
 
     if (storeIds.length === 0) {
-      console.log('ℹ️ No stores found for company');
       return res.json({ lowStockProducts: [] });
     }
 
-    const { data: products, error } = await supabase
+    const { data: lowStockItems, error } = await supabase
       .from('products')
       .select(`
         id,
         name,
         stock_quantity,
         min_stock_level,
+        default_price,
+        store_id,
+        stores!inner(name),
         categories(name)
       `)
-      .in('store_id', storeIds)
       .eq('is_active', true)
-      .order('stock_quantity', { ascending: true });
+      .in('store_id', storeIds)
+      .order('stock_quantity', { ascending: true })
+      .limit(10);
 
     if (error) {
-      console.error('Low stock products query error:', error);
       throw error;
     }
 
-    // Filter products where stock <= min_stock_level
-    const filteredProducts = products?.filter(product => 
-      product.stock_quantity <= product.min_stock_level
-    ).slice(0, 10).map(product => ({
-      id: product.id,
-      name: product.name,
-      stock: product.stock_quantity,
-      minStock: product.min_stock_level,
-      category: product.categories?.name || 'Uncategorized'
+    // Filter for actual low stock items
+    const filteredLowStock = lowStockItems?.filter(item => 
+      item.stock_quantity <= item.min_stock_level
+    ).map(item => ({
+      id: item.id,
+      name: item.name,
+      currentStock: item.stock_quantity,
+      minLevel: item.min_stock_level,
+      price: parseFloat(item.default_price || 0),
+      category: item.categories?.name || 'Uncategorized',
+      store: item.stores?.name || 'Unknown Store'
     })) || [];
 
-    console.log('✅ Low stock products found:', filteredProducts.length);
+    console.log('✅ Low stock products found:', filteredLowStock.length);
 
-    res.json({ lowStockProducts: filteredProducts });
+    res.json({ lowStockProducts: filteredLowStock });
 
   } catch (error) {
     console.error('Low stock products error:', error);
@@ -188,107 +214,10 @@ async function getLowStockProducts(req, res) {
   }
 }
 
-async function getTopProducts(req, res) {
-  try {
-    const companyId = req.user.company_id;
-    const supabase = getSupabase();
-
-    console.log('📊 Getting top products for company:', companyId);
-
-    // First get store IDs for this company
-    const { data: stores } = await supabase
-      .from('stores')
-      .select('id')
-      .eq('company_id', companyId);
-
-    const storeIds = stores?.map(store => store.id) || [];
-
-    if (storeIds.length === 0) {
-      console.log('ℹ️ No stores found for company');
-      return res.json({ topProducts: [] });
-    }
-
-    // Get some products for mock data
-    const { data: products } = await supabase
-      .from('products')
-      .select('name, default_price')
-      .in('store_id', storeIds)
-      .eq('is_active', true)
-      .limit(4);
-
-    // Mock top products data (you'll need to implement proper sales tracking later)
-    const mockTopProducts = products?.map((product, index) => ({
-      name: product.name,
-      sales: Math.floor(Math.random() * 100) + 50, // Random sales count
-      revenue: (Math.floor(Math.random() * 100) + 50) * parseFloat(product.default_price || 0)
-    })).sort((a, b) => b.sales - a.sales) || [];
-
-    console.log('✅ Top products found:', mockTopProducts.length);
-
-    res.json({ topProducts: mockTopProducts });
-
-  } catch (error) {
-    console.error('Top products error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch top products',
-      code: 'TOP_PRODUCTS_ERROR'
-    });
-  }
-}
-
-async function getStores(req, res) {
-  try {
-    const companyId = req.user.company_id;
-    const supabase = getSupabase();
-
-    console.log('📊 Getting stores for company:', companyId);
-
-    const { data: stores, error } = await supabase
-      .from('stores')
-      .select('id, name, is_active')
-      .eq('company_id', companyId);
-
-    if (error) {
-      throw error;
-    }
-
-    // Get sales for each store (today)
-    const today = new Date().toISOString().split('T')[0];
-    const storesWithSales = await Promise.all(stores?.map(async (store) => {
-      const { data: storeSales } = await supabase
-        .from('sales')
-        .select('total_amount')
-        .eq('store_id', store.id)
-        .gte('created_at', today + 'T00:00:00.000Z')
-        .lt('created_at', today + 'T23:59:59.999Z');
-
-      const totalSales = storeSales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount || 0), 0) || 0;
-
-      return {
-        id: store.id,
-        name: store.name,
-        status: store.is_active ? 'active' : 'inactive',
-        sales: totalSales
-      };
-    }) || []);
-
-    console.log('✅ Stores with sales found:', storesWithSales.length);
-
-    res.json({ stores: storesWithSales });
-
-  } catch (error) {
-    console.error('Stores error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch stores',
-      code: 'STORES_ERROR'
-    });
-  }
-}
-
 module.exports = {
   getDashboardOverview,
   getRecentSales,
   getLowStockProducts,
-  getTopProducts,
-  getStores
+  getTopProducts, // Keep existing
+  getStores // Keep existing
 };
