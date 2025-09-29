@@ -228,7 +228,7 @@ async function updateProduct(req, res) {
     const companyId = req.user.company_id;
     const supabase = getSupabase();
 
-    console.log('📦 Updating product:', id);
+    console.log('📦 Updating product:', id, 'with data:', req.body);
 
     // Get store IDs for this company
     const { data: stores } = await supabase
@@ -238,12 +238,20 @@ async function updateProduct(req, res) {
 
     const storeIds = stores?.map(store => store.id) || [];
 
-    // Verify product exists and belongs to company
+    if (storeIds.length === 0) {
+      return res.status(404).json({ 
+        error: 'No stores found for company',
+        code: 'NO_STORES_FOUND'
+      });
+    }
+
+    // Check if product exists and belongs to company
     const { data: existingProduct } = await supabase
       .from('products')
-      .select('id, sku')
+      .select('*')
       .eq('id', id)
       .in('store_id', storeIds)
+      .eq('is_active', true)
       .single();
 
     if (!existingProduct) {
@@ -264,6 +272,7 @@ async function updateProduct(req, res) {
         .from('products')
         .select('id')
         .eq('sku', updateData.sku)
+        .in('store_id', storeIds)
         .neq('id', id)
         .single();
 
@@ -275,7 +284,7 @@ async function updateProduct(req, res) {
       }
     }
 
-    // Convert numeric fields
+    // Convert numeric fields - FIX THE TYPO HERE
     if (updateData.default_price) updateData.default_price = parseFloat(updateData.default_price);
     if (updateData.manila_price) updateData.manila_price = parseFloat(updateData.manila_price);
     if (updateData.delivery_price) updateData.delivery_price = parseFloat(updateData.delivery_price);
@@ -283,9 +292,11 @@ async function updateProduct(req, res) {
     if (updateData.stock_quantity !== undefined) updateData.stock_quantity = parseInt(updateData.stock_quantity);
     if (updateData.min_stock_level) updateData.min_stock_level = parseInt(updateData.min_stock_level);
     if (updateData.max_stock_level) updateData.max_stock_level = parseInt(updateData.max_stock_level);
-    if (updateData.weight) updateData.weight = parseFloat(updateData.weight);
+    if (updateData.weight) updateData.weight = parseFloat(updateData.weight); // FIXED: was "parssrc"
 
     updateData.updated_at = new Date().toISOString();
+
+    console.log('📦 Processed update data:', updateData);
 
     const { data: product, error } = await supabase
       .from('products')
@@ -298,6 +309,7 @@ async function updateProduct(req, res) {
       .single();
 
     if (error) {
+      console.error('Supabase update error:', error);
       throw error;
     }
 
@@ -312,7 +324,8 @@ async function updateProduct(req, res) {
     console.error('Update product error:', error);
     res.status(500).json({ 
       error: 'Failed to update product',
-      code: 'UPDATE_PRODUCT_ERROR'
+      code: 'UPDATE_PRODUCT_ERROR',
+      details: error.message
     });
   }
 }

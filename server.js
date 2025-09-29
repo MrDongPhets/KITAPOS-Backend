@@ -7,6 +7,8 @@ const { requestLogger } = require('./src/middleware/logger');
 const { errorHandler } = require('./src/middleware/errorHandler');
 const routes = require('./src/routes');
 const { ensureDemoData } = require('./src/services/demoDataService');
+const uploadRoutes = require('./src/routes/client/upload');
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,6 +18,7 @@ app.use(configureCORS());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
+app.use('/api/client/upload', uploadRoutes);
 
 // Add diagnostic route (only in development or with special header)
 app.get('/diagnostic', (req, res) => {

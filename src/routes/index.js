@@ -10,6 +10,7 @@ const clientRoutes = require('./client');
 
 
 
+
 // Root endpoint - FIXED to show actual available endpoints
 router.get('/', (req, res) => {
   res.json({ 
@@ -43,5 +44,6 @@ router.use('/health', healthRoute);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/client', clientRoutes);
+
 
 module.exports = router;
