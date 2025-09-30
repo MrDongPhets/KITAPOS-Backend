@@ -1,9 +1,10 @@
-// Update your src/controllers/client/dashboardController.js to support store filtering
+// src/controllers/client/dashboardController.js - Complete with all functions
+const { getSupabase } = require('../../config/database');
 
 async function getDashboardOverview(req, res) {
   try {
     const companyId = req.user.company_id;
-    const storeFilter = req.query.store_id; // Get store filter from query params
+    const storeFilter = req.query.store_id;
     const supabase = getSupabase();
 
     console.log('📊 Getting dashboard overview for company:', companyId, 'store:', storeFilter || 'ALL');
@@ -22,7 +23,7 @@ async function getDashboardOverview(req, res) {
       });
     }
 
-    // Get today's sales total (filtered by store if specified)
+    // Get today's sales total
     const today = new Date().toISOString().split('T')[0];
     let salesQuery = supabase
       .from('sales')
@@ -38,14 +39,14 @@ async function getDashboardOverview(req, res) {
     const { data: todaySales } = await salesQuery;
     const totalSales = todaySales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount || 0), 0) || 0;
 
-    // Get total products count (filtered by store)
+    // Get total products count
     const { count: totalProducts } = await supabase
       .from('products')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true)
       .in('store_id', storeIds);
 
-    // Get staff count (filtered by store if specified)
+    // Get staff count
     let staffQuery = supabase
       .from('staff')
       .select('*', { count: 'exact', head: true })
@@ -58,7 +59,7 @@ async function getDashboardOverview(req, res) {
 
     const { count: totalStaff } = await staffQuery;
 
-    // Get low stock items count (filtered by store)
+    // Get low stock items count
     const { data: lowStockItems } = await supabase
       .from('products')
       .select('id, stock_quantity, min_stock_level')
@@ -214,10 +215,110 @@ async function getLowStockProducts(req, res) {
   }
 }
 
+async function getTopProducts(req, res) {
+  try {
+    const companyId = req.user.company_id;
+    const storeFilter = req.query.store_id;
+    const supabase = getSupabase();
+
+    console.log('📊 Getting top products for company:', companyId, 'store:', storeFilter || 'ALL');
+
+    // Get stores for this company
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('is_active', true);
+
+    const storeIds = storeFilter ? [storeFilter] : stores?.map(store => store.id) || [];
+
+    if (storeIds.length === 0) {
+      return res.json({ topProducts: [] });
+    }
+
+    // Simply return products sorted by stock quantity for now
+    // This will work even if you have no sales data yet
+    const { data: products, error } = await supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        default_price,
+        stock_quantity,
+        categories(name)
+      `)
+      .eq('is_active', true)
+      .in('store_id', storeIds)
+      .order('stock_quantity', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error('Products query error:', error);
+      throw error;
+    }
+
+    const topProducts = products?.map(product => ({
+      id: product.id,
+      name: product.name,
+      category: product.categories?.name || 'Uncategorized',
+      price: parseFloat(product.default_price || 0),
+      stockQuantity: product.stock_quantity || 0,
+      totalQuantity: 0, // Placeholder for future sales data
+      totalRevenue: 0    // Placeholder for future sales data
+    })) || [];
+
+    console.log('✅ Top products found:', topProducts.length);
+
+    res.json({ topProducts });
+
+  } catch (error) {
+    console.error('Top products error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch top products',
+      code: 'TOP_PRODUCTS_ERROR',
+      details: error.message
+    });
+  }
+}
+
+async function getStores(req, res) {
+  try {
+    const companyId = req.user.company_id;
+    const supabase = getSupabase();
+
+    console.log('🏪 Getting stores for company:', companyId);
+
+    const { data: stores, error } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log('✅ Stores found:', stores?.length || 0);
+
+    res.json({ 
+      stores: stores || [],
+      count: stores?.length || 0
+    });
+
+  } catch (error) {
+    console.error('Get stores error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch stores',
+      code: 'STORES_ERROR'
+    });
+  }
+}
+
 module.exports = {
   getDashboardOverview,
   getRecentSales,
   getLowStockProducts,
-  getTopProducts, // Keep existing
-  getStores // Keep existing
+  getTopProducts,
+  getStores
 };

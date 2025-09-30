@@ -5,6 +5,7 @@ const { authenticateToken, requireClient } = require('../../middleware/auth');
 const dashboardRoutes = require('./dashboard');
 const productsRoutes = require('./products');
 const uploadRoutes = require('./upload');
+const storesRoutes = require('./stores');
 
 // Apply authentication to all client routes
 router.use(authenticateToken);
@@ -14,6 +15,7 @@ router.use(requireClient);
 router.use('/dashboard', dashboardRoutes);
 router.use('/products', productsRoutes);
 router.use('/upload', uploadRoutes);
+router.use('/stores', storesRoutes);
 
 
 module.exports = router;

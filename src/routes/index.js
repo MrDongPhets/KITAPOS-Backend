@@ -11,6 +11,7 @@ const clientRoutes = require('./client');
 
 
 
+
 // Root endpoint - FIXED to show actual available endpoints
 router.get('/', (req, res) => {
   res.json({ 
