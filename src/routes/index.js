@@ -1,4 +1,4 @@
-// src/routes/index.js - Fixed to show all correct endpoints
+// src/routes/index.js
 const express = require('express');
 const router = express.Router();
 const { API_VERSION, DEMO_CREDENTIALS } = require('../config/constants');
@@ -7,12 +7,9 @@ const authRoutes = require('./auth');
 const adminRoutes = require('./admin');
 const healthRoute = require('./health');
 const clientRoutes = require('./client');
+const posRoutes = require('./pos'); // ✅ ADD THIS LINE
 
-
-
-
-
-// Root endpoint - FIXED to show actual available endpoints
+// Root endpoint
 router.get('/', (req, res) => {
   res.json({ 
     message: 'POS System API - Modular Version',
@@ -34,17 +31,29 @@ router.get('/', (req, res) => {
         users: 'GET /admin/users',
         userStats: 'GET /admin/stats/users',
         subscriptionStats: 'GET /admin/stats/subscriptions'
+      },
+      client: {
+        dashboard: 'GET /client/dashboard/*',
+        products: 'GET /client/products',
+        categories: 'GET /client/categories',
+        stores: 'GET /client/stores'
+      },
+      pos: { // ✅ ADD THIS
+        products: 'GET /pos/products/category',
+        search: 'GET /pos/products/search',
+        sales: 'POST /pos/sales',
+        todaySales: 'GET /pos/sales/today'
       }
     },
     demo_credentials: process.env.NODE_ENV !== 'production' ? DEMO_CREDENTIALS : 'Hidden in production'
   });
 });
 
-// Mount routes - ensure these are all properly mounted
+// Mount routes
 router.use('/health', healthRoute);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/client', clientRoutes);
-
+router.use('/pos', posRoutes); // ✅ ADD THIS LINE
 
 module.exports = router;
