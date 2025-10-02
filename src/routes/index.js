@@ -7,7 +7,8 @@ const authRoutes = require('./auth');
 const adminRoutes = require('./admin');
 const healthRoute = require('./health');
 const clientRoutes = require('./client');
-const posRoutes = require('./pos'); // ✅ ADD THIS LINE
+const posRoutes = require('./pos');
+const staffRoutes = require('./staff'); // ✅ ADD THIS LINE
 
 // Root endpoint
 router.get('/', (req, res) => {
@@ -38,11 +39,15 @@ router.get('/', (req, res) => {
         categories: 'GET /client/categories',
         stores: 'GET /client/stores'
       },
-      pos: { // ✅ ADD THIS
+      pos: {
         products: 'GET /pos/products/category',
         search: 'GET /pos/products/search',
         sales: 'POST /pos/sales',
         todaySales: 'GET /pos/sales/today'
+      },
+      staff: { // ✅ ADD THIS
+        login: 'POST /staff/auth/login',
+        verify: 'GET /staff/auth/verify'
       }
     },
     demo_credentials: process.env.NODE_ENV !== 'production' ? DEMO_CREDENTIALS : 'Hidden in production'
@@ -54,6 +59,7 @@ router.use('/health', healthRoute);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/client', clientRoutes);
-router.use('/pos', posRoutes); // ✅ ADD THIS LINE
+router.use('/pos', posRoutes);
+router.use('/staff', staffRoutes); // ✅ ADD THIS LINE
 
 module.exports = router;
