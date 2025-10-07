@@ -10,7 +10,7 @@ function generateToken(user, userType = 'client') {
 
   if (userType === 'super_admin') {
     payload.permissions = user.permissions || {};
-  } else if (userType === 'staff') { // ADD THIS
+  } else if (userType === 'staff') { 
     payload.role = user.role;
     payload.company_id = user.company_id;
     payload.store_id = user.store_id;
