@@ -6,6 +6,7 @@ const dashboardRoutes = require('./dashboard');
 const productsRoutes = require('./products');
 const categoriesRoutes = require('./categories');
 const inventoryRoutes = require('./inventory');
+const salesRoutes = require('./sales');
 const uploadRoutes = require('./upload');
 const storesRoutes = require('./stores');
 
@@ -18,6 +19,7 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/products', productsRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/inventory', inventoryRoutes);
+router.use('/sales', salesRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/stores', storesRoutes);
 
