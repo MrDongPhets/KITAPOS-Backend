@@ -3,16 +3,23 @@ const { getSupabase } = require('../../config/database');
 async function getProducts(req, res) {
   try {
     const companyId = req.user.company_id;
+    const { store_id } = req.query; // Get store_id from query params
     const supabase = getSupabase();
 
-    console.log('📦 Getting products for company:', companyId);
+    console.log('📦 Getting products for company:', companyId, 'store:', store_id || 'ALL');
 
     // First get store IDs for this company
-    const { data: stores } = await supabase
+    let storesQuery = supabase
       .from('stores')
       .select('id')
       .eq('company_id', companyId);
 
+    // If store_id is provided, filter to that specific store
+    if (store_id) {
+      storesQuery = storesQuery.eq('id', store_id);
+    }
+
+    const { data: stores } = await storesQuery;
     const storeIds = stores?.map(store => store.id) || [];
 
     if (storeIds.length === 0) {
@@ -384,16 +391,23 @@ async function deleteProduct(req, res) {
 async function getCategories(req, res) {
   try {
     const companyId = req.user.company_id;
+    const { store_id } = req.query; // Add store_id filter
     const supabase = getSupabase();
 
-    console.log('📦 Getting categories for company:', companyId);
+    console.log('📦 Getting categories for company:', companyId, 'store:', store_id || 'ALL');
 
     // Get store IDs for this company
-    const { data: stores } = await supabase
+    let storesQuery = supabase
       .from('stores')
       .select('id')
       .eq('company_id', companyId);
 
+    // If store_id is provided, filter to that specific store
+    if (store_id) {
+      storesQuery = storesQuery.eq('id', store_id);
+    }
+
+    const { data: stores } = await storesQuery;
     const storeIds = stores?.map(store => store.id) || [];
 
     if (storeIds.length === 0) {

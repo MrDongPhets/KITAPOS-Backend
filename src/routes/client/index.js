@@ -9,6 +9,7 @@ const inventoryRoutes = require('./inventory');
 const salesRoutes = require('./sales');
 const uploadRoutes = require('./upload');
 const storesRoutes = require('./stores');
+const inventoryTransferRoutes = require('./inventorytransfer');
 
 // Apply authentication to all client routes
 router.use(authenticateToken);
@@ -22,6 +23,7 @@ router.use('/inventory', inventoryRoutes);
 router.use('/sales', salesRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/stores', storesRoutes);
+router.use('/inventory-transfer', inventoryTransferRoutes);
 
 
 module.exports = router;
