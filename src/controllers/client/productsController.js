@@ -127,7 +127,8 @@ async function createProduct(req, res) {
       weight,
       dimensions,
       image_url,
-      tags
+      tags,
+      is_composite  // NEW: Check if it's a composite product
     } = req.body;
 
     console.log('📦 Creating product:', name);
@@ -177,6 +178,9 @@ async function createProduct(req, res) {
       });
     }
 
+    // For composite products, don't track stock, set to NULL
+    const productStock = is_composite ? null : parseInt(stock_quantity || 0);
+
     // Create product
     const { data: product, error } = await supabase
       .from('products')
@@ -191,29 +195,23 @@ async function createProduct(req, res) {
         manila_price: manila_price ? parseFloat(manila_price) : null,
         delivery_price: delivery_price ? parseFloat(delivery_price) : null,
         wholesale_price: wholesale_price ? parseFloat(wholesale_price) : null,
-        stock_quantity: parseInt(stock_quantity || 0),
-        min_stock_level: parseInt(min_stock_level || 5),
-        max_stock_level: parseInt(max_stock_level || 100),
+        stock_quantity: productStock,  // NULL for composite
+        min_stock_level: is_composite ? null : parseInt(min_stock_level || 5),
+        max_stock_level: is_composite ? null : parseInt(max_stock_level || 100),
         unit: unit || 'pcs',
         weight: weight ? parseFloat(weight) : null,
         dimensions: dimensions || null,
         image_url: image_url || null,
         tags: tags || null,
-        created_by: userId,
-        is_active: true
+        is_composite: is_composite || false,
+        created_by: userId
       }])
-      .select(`
-        *,
-        categories(id, name, color, icon)
-      `)
+      .select()
       .single();
 
-    if (error) {
-      console.error('Create product error:', error);
-      throw error;
-    }
+    if (error) throw error;
 
-    console.log('✅ Product created:', product.name);
+    console.log('✅ Product created successfully:', product.id);
 
     res.status(201).json({
       message: 'Product created successfully',
@@ -222,9 +220,9 @@ async function createProduct(req, res) {
 
   } catch (error) {
     console.error('Create product error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to create product',
-      code: 'CREATE_PRODUCT_ERROR'
+      code: 'CREATE_ERROR'
     });
   }
 }
