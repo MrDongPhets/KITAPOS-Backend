@@ -20,7 +20,7 @@ const options = {
         description: 'Development server'
       },
       {
-        url: 'https://kitapos-backend.vercel.app',
+        url: 'https://kitapos-backend.onrender.com',
         description: 'Production server'
       }
     ],
