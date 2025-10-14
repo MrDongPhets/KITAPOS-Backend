@@ -1,6 +1,8 @@
-// server.js - Updated with better error handling and diagnostics
+// server.js - Updated with Swagger API Documentation
 require('dotenv').config();
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./src/config/swagger');
 const { initializeDatabase } = require('./src/config/database');
 const { configureCORS } = require('./src/config/cors');
 const { requestLogger } = require('./src/middleware/logger');
@@ -8,7 +10,6 @@ const { errorHandler } = require('./src/middleware/errorHandler');
 const routes = require('./src/routes');
 const { ensureDemoData } = require('./src/services/demoDataService');
 const uploadRoutes = require('./src/routes/client/upload');
-
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,6 +20,39 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 app.use('/api/client/upload', uploadRoutes);
+
+// ============================================
+// SWAGGER API DOCUMENTATION
+// ============================================
+app.use('/api-docs', swaggerUi.serve);
+app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'KitaPOS API Documentation',
+  customCss: `
+    .swagger-ui .topbar { display: none }
+    .swagger-ui .information-container { margin: 20px 0 }
+    .swagger-ui .scheme-container { margin: 20px 0; background: #fafafa; padding: 10px; }
+  `,
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    tryItOutEnabled: true,
+    docExpansion: 'none',
+    defaultModelsExpandDepth: 3,
+    defaultModelExpandDepth: 3,
+    displayOperationId: false,
+    syntaxHighlight: {
+      activate: true,
+      theme: 'monokai'
+    }
+  }
+}));
+
+// Swagger JSON endpoint
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Add diagnostic route (only in development or with special header)
 app.get('/diagnostic', (req, res) => {
@@ -45,7 +79,9 @@ app.use('*', (req, res) => {
   };
   
   if (process.env.NODE_ENV !== 'production') {
+    response.documentation = '/api-docs';
     response.availableEndpoints = {
+      documentation: 'GET /api-docs',
       health: 'GET /health',
       auth: [
         'POST /auth/login',
@@ -59,6 +95,17 @@ app.use('*', (req, res) => {
         'GET /admin/users',
         'GET /admin/stats/users',
         'GET /admin/stats/subscriptions'
+      ],
+      client: [
+        'GET /client/dashboard/*',
+        'GET /client/products',
+        'GET /client/categories',
+        'GET /client/stores'
+      ],
+      reports: [
+        'GET /reports/sales',
+        'GET /reports/inventory',
+        'GET /reports/financial'
       ]
     };
   }
@@ -68,33 +115,49 @@ app.use('*', (req, res) => {
 
 // Initialize and Start Server
 async function startServer() {
-  console.log('🚀 Starting POS System API Server...');
-  console.log(`🔍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Port: ${PORT}`);
+  console.log('╔════════════════════════════════════════════════════╗');
+  console.log('║       🚀 KitaPOS Backend API Server               ║');
+  console.log('╚════════════════════════════════════════════════════╝');
+  console.log(`🔍 Environment:  ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Port:         ${PORT}`);
   
   // Initialize Database
   const dbInitialized = await initializeDatabase();
   
   if (dbInitialized) {
+    console.log('✅ Database initialized successfully');
     // Ensure demo data exists
     await ensureDemoData();
+    console.log('✅ Demo data verified');
   } else {
     console.error('❌ Failed to initialize database. Server running in degraded mode.');
   }
   
   const server = app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`📱 API Base: ${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`}`);
-    console.log(`🔍 Health check: ${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`}/health`);
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : `http://localhost:${PORT}`;
+    
     console.log('');
-    console.log('📋 Available Endpoints:');
-    console.log('   Auth: /auth/login, /auth/super-admin/login, /auth/register-company');
-    console.log('   Admin: /admin/companies, /admin/users, /admin/stats/*');
+    console.log('════════════════════════════════════════════════════');
+    console.log('✅ Server is running and ready!');
+    console.log('════════════════════════════════════════════════════');
+    console.log(`📱 API Base:     ${baseUrl}`);
+    console.log(`🔍 Health:       ${baseUrl}/health`);
+    console.log(`📚 API Docs:     ${baseUrl}/api-docs`);
+    console.log(`📄 OpenAPI:      ${baseUrl}/api-docs.json`);
     console.log('');
-    console.log('📋 Demo Credentials:');
-    console.log('   Business User: manager@demobakery.com / password123');
+    console.log('📋 Quick Access Endpoints:');
+    console.log('   Authentication:  POST /auth/login');
+    console.log('   Super Admin:     POST /auth/super-admin/login');
+    console.log('   Companies:       GET  /admin/companies');
+    console.log('   Products:        GET  /client/products');
+    console.log('   Sales Reports:   GET  /reports/sales');
+    console.log('');
+    console.log('🔐 Demo Credentials:');
+    console.log('   Client:      manager@demobakery.com / password123');
     console.log('   Super Admin: admin@system.com / superadmin123');
-    console.log('✅ Server ready to accept connections');
+    console.log('════════════════════════════════════════════════════');
   });
 
   process.on('SIGTERM', () => {
