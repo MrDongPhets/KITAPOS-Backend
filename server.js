@@ -24,8 +24,8 @@ app.use('/api/client/upload', uploadRoutes);
 // ============================================
 // SWAGGER API DOCUMENTATION
 // ============================================
-app.use('/api-docs', swaggerUi.serve);
-app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
+app.use('/', swaggerUi.serve);
+app.get('/', swaggerUi.setup(swaggerSpec, {
   customSiteTitle: 'KitaPOS API Documentation',
   customCss: `
     .swagger-ui .topbar { display: none }
