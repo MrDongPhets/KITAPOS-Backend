@@ -3,48 +3,83 @@ const { getSupabase } = require('../../config/database');
 async function getProducts(req, res) {
   try {
     const companyId = req.user.company_id;
-    const { store_id } = req.query; // Get store_id from query params
+    const { store_id, category_id } = req.query;
     const supabase = getSupabase();
 
-    console.log('📦 Getting products for company:', companyId, 'store:', store_id || 'ALL');
+    console.log('📦 Getting products for company:', companyId);
 
-    // First get store IDs for this company
-    let storesQuery = supabase
+    // Get store IDs for this company
+    const { data: stores } = await supabase
       .from('stores')
       .select('id')
       .eq('company_id', companyId);
 
-    // If store_id is provided, filter to that specific store
-    if (store_id) {
-      storesQuery = storesQuery.eq('id', store_id);
-    }
-
-    const { data: stores } = await storesQuery;
     const storeIds = stores?.map(store => store.id) || [];
 
     if (storeIds.length === 0) {
       return res.json({ products: [], count: 0 });
     }
 
-    // Get products with categories
-    const { data: products, error, count } = await supabase
+    // Build query
+    let query = supabase
       .from('products')
       .select(`
         *,
         categories(id, name, color, icon)
       `, { count: 'exact' })
       .in('store_id', storeIds)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .eq('is_active', true);
 
-    if (error) {
-      throw error;
+    if (store_id) {
+      query = query.eq('store_id', store_id);
     }
 
-    console.log('✅ Products found:', products?.length || 0);
+    if (category_id) {
+      query = query.eq('category_id', category_id);
+    }
+
+    const { data: products, error, count } = await query.order('name');
+
+    if (error) throw error;
+
+    // For composite products with stock, fetch EARLIEST (not latest) expiry date
+    const productsWithExpiry = await Promise.all(
+      products.map(async (product) => {
+        if (product.is_composite && product.stock_quantity > 0) {
+          // CHANGED: Order by expiry_date ascending to get EARLIEST
+          const { data: earliestBatch } = await supabase
+            .from('product_manufacturing')
+            .select('expiry_date, batch_number, production_date, quantity_produced')
+            .eq('product_id', product.id)
+            .not('expiry_date', 'is', null)
+            .gte('expiry_date', new Date().toISOString()) // Only future dates
+            .order('expiry_date', { ascending: true }) // EARLIEST first
+            .limit(1)
+            .single();
+
+          // Also get count of total batches
+          const { count: batchCount } = await supabase
+            .from('product_manufacturing')
+            .select('id', { count: 'exact', head: true })
+            .eq('product_id', product.id)
+            .not('expiry_date', 'is', null);
+
+          return {
+            ...product,
+            earliest_expiry_date: earliestBatch?.expiry_date || null,
+            earliest_batch_number: earliestBatch?.batch_number || null,
+            earliest_production_date: earliestBatch?.production_date || null,
+            total_batches: batchCount || 0
+          };
+        }
+        return product;
+      })
+    );
+
+    console.log('✅ Products found:', productsWithExpiry.length);
 
     res.json({
-      products: products || [],
+      products: productsWithExpiry,
       count: count || 0,
       timestamp: new Date().toISOString()
     });
@@ -58,13 +93,12 @@ async function getProducts(req, res) {
   }
 }
 
+// Also update getProduct (single product) to show earliest expiry
 async function getProduct(req, res) {
   try {
     const { id } = req.params;
     const companyId = req.user.company_id;
     const supabase = getSupabase();
-
-    console.log('📦 Getting product:', id);
 
     // Get store IDs for this company
     const { data: stores } = await supabase
@@ -86,22 +120,50 @@ async function getProduct(req, res) {
       .single();
 
     if (error || !product) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Product not found',
         code: 'PRODUCT_NOT_FOUND'
       });
+    }
+
+    // If composite with stock, get EARLIEST expiry batch
+    if (product.is_composite && product.stock_quantity > 0) {
+      const { data: earliestBatch } = await supabase
+        .from('product_manufacturing')
+        .select('expiry_date, batch_number, production_date, quantity_produced')
+        .eq('product_id', product.id)
+        .not('expiry_date', 'is', null)
+        .gte('expiry_date', new Date().toISOString())
+        .order('expiry_date', { ascending: true }) // EARLIEST
+        .limit(1)
+        .single();
+
+      // Get all batches for detailed view
+      const { data: allBatches } = await supabase
+        .from('product_manufacturing')
+        .select('expiry_date, batch_number, production_date, quantity_produced')
+        .eq('product_id', product.id)
+        .not('expiry_date', 'is', null)
+        .order('expiry_date', { ascending: true });
+
+      product.earliest_expiry_date = earliestBatch?.expiry_date || null;
+      product.earliest_batch_number = earliestBatch?.batch_number || null;
+      product.earliest_production_date = earliestBatch?.production_date || null;
+      product.all_batches = allBatches || [];
+      product.total_batches = allBatches?.length || 0;
     }
 
     res.json({ product });
 
   } catch (error) {
     console.error('Get product error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch product',
       code: 'PRODUCT_ERROR'
     });
   }
 }
+
 
 async function createProduct(req, res) {
   try {
