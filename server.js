@@ -1,4 +1,4 @@
-// server.js - Updated with Swagger API Documentation
+// server.js - SECURED VERSION
 require('dotenv').config();
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
@@ -13,6 +13,7 @@ const uploadRoutes = require('./src/routes/client/upload');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Middleware
 app.use(configureCORS());
@@ -22,41 +23,65 @@ app.use(requestLogger);
 app.use('/api/client/upload', uploadRoutes);
 
 // ============================================
-// SWAGGER API DOCUMENTATION
+// SWAGGER API DOCUMENTATION (Development Only)
 // ============================================
-app.use('/', swaggerUi.serve);
-app.get('/', swaggerUi.setup(swaggerSpec, {
-  customSiteTitle: 'KitaPOS API Documentation',
-  customCss: `
-    .swagger-ui .topbar { display: none }
-    .swagger-ui .information-container { margin: 20px 0 }
-    .swagger-ui .scheme-container { margin: 20px 0; background: #fafafa; padding: 10px; }
-  `,
-  swaggerOptions: {
-    persistAuthorization: true,
-    displayRequestDuration: true,
-    filter: true,
-    tryItOutEnabled: true,
-    docExpansion: 'none',
-    defaultModelsExpandDepth: 3,
-    defaultModelExpandDepth: 3,
-    displayOperationId: false,
-    syntaxHighlight: {
-      activate: true,
-      theme: 'monokai'
+if (!isProduction) {
+  // Swagger available at /api-docs in development
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'KitaPOS API Documentation - DEVELOPMENT',
+    customCss: `
+      .swagger-ui .topbar { display: none }
+      .swagger-ui .information-container { margin: 20px 0 }
+      .swagger-ui .scheme-container { margin: 20px 0; background: #fafafa; padding: 10px; }
+    `,
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      tryItOutEnabled: true,
+      docExpansion: 'none',
+      defaultModelsExpandDepth: 3,
+      defaultModelExpandDepth: 3,
+      displayOperationId: false,
+      syntaxHighlight: {
+        activate: true,
+        theme: 'monokai'
+      }
     }
-  }
-}));
+  }));
 
-// Swagger JSON endpoint
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
+  // Swagger JSON endpoint (development only)
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+
+  console.log('📚 Swagger docs enabled at /api-docs (DEVELOPMENT MODE)');
+} else {
+  // Block Swagger in production
+  app.use('/api-docs', (req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+  app.get('/api-docs.json', (req, res) => {
+    res.status(404).json({ error: 'Not found' });
+  });
+  console.log('🔒 Swagger disabled (PRODUCTION MODE)');
+}
+
+// Root endpoint - Simple API info (no sensitive data)
+app.get('/', (req, res) => {
+  res.json({
+    name: 'KitaPOS API',
+    version: '2.2.0',
+    status: 'active',
+    timestamp: new Date().toISOString(),
+    documentation: isProduction ? 'Available in development mode only' : '/api-docs'
+  });
 });
 
 // Add diagnostic route (only in development or with special header)
 app.get('/diagnostic', (req, res) => {
-  if (process.env.NODE_ENV !== 'production' || req.headers['x-diagnostic-key'] === process.env.JWT_SECRET) {
+  if (!isProduction || req.headers['x-diagnostic-key'] === process.env.DIAGNOSTIC_KEY) {
     const diagnostic = require('./src/routes/diagnostic');
     return diagnostic(req, res);
   }
@@ -69,7 +94,7 @@ app.use('/', routes);
 // Error Handler
 app.use(errorHandler);
 
-// 404 Handler - More detailed in development
+// 404 Handler
 app.use('*', (req, res) => {
   const response = { 
     error: 'Endpoint not found',
@@ -78,7 +103,8 @@ app.use('*', (req, res) => {
     method: req.method
   };
   
-  if (process.env.NODE_ENV !== 'production') {
+  // Only show available endpoints in development
+  if (!isProduction) {
     response.documentation = '/api-docs';
     response.availableEndpoints = {
       documentation: 'GET /api-docs',
@@ -144,19 +170,27 @@ async function startServer() {
     console.log('════════════════════════════════════════════════════');
     console.log(`📱 API Base:     ${baseUrl}`);
     console.log(`🔍 Health:       ${baseUrl}/health`);
-    console.log(`📚 API Docs:     ${baseUrl}/api-docs`);
-    console.log(`📄 OpenAPI:      ${baseUrl}/api-docs.json`);
-    console.log('');
-    console.log('📋 Quick Access Endpoints:');
-    console.log('   Authentication:  POST /auth/login');
-    console.log('   Super Admin:     POST /auth/super-admin/login');
-    console.log('   Companies:       GET  /admin/companies');
-    console.log('   Products:        GET  /client/products');
-    console.log('   Sales Reports:   GET  /reports/sales');
-    console.log('');
-    console.log('🔐 Demo Credentials:');
-    console.log('   Client:      manager@demobakery.com / password123');
-    console.log('   Super Admin: admin@system.com / superadmin123');
+    
+    // Only show documentation URL in development
+    if (!isProduction) {
+      console.log(`📚 API Docs:     ${baseUrl}/api-docs`);
+      console.log(`📄 OpenAPI:      ${baseUrl}/api-docs.json`);
+      console.log('');
+      console.log('📋 Quick Access Endpoints:');
+      console.log('   Authentication:  POST /auth/login');
+      console.log('   Super Admin:     POST /auth/super-admin/login');
+      console.log('   Companies:       GET  /admin/companies');
+      console.log('   Products:        GET  /client/products');
+      console.log('   Sales Reports:   GET  /reports/sales');
+      console.log('');
+      console.log('🔐 Demo Credentials:');
+      console.log('   Client:      manager@demobakery.com / password123');
+      console.log('   Super Admin: admin@system.com / superadmin123');
+    } else {
+      console.log('🔒 API Documentation: Disabled in production');
+      console.log('🔒 Demo Credentials: Hidden in production');
+    }
+    
     console.log('════════════════════════════════════════════════════');
   });
 
