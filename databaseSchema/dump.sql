@@ -53,6 +53,44 @@ CREATE TABLE public.file_uploads (
   CONSTRAINT file_uploads_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id),
   CONSTRAINT file_uploads_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
+CREATE TABLE public.ingredient_movements (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ingredient_id uuid NOT NULL,
+  store_id character varying NOT NULL,
+  movement_type character varying NOT NULL CHECK (movement_type::text = ANY (ARRAY['in'::character varying, 'out'::character varying, 'adjustment'::character varying, 'usage'::character varying]::text[])),
+  quantity numeric NOT NULL,
+  previous_stock numeric NOT NULL DEFAULT 0,
+  new_stock numeric NOT NULL DEFAULT 0,
+  unit_cost numeric,
+  reference_type character varying,
+  reference_id uuid,
+  notes text,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ingredient_movements_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_ingredient_movement_ingredient FOREIGN KEY (ingredient_id) REFERENCES public.ingredients(id),
+  CONSTRAINT fk_ingredient_movement_store FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT fk_ingredient_movement_created_by FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.ingredients (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  description text,
+  sku character varying UNIQUE,
+  store_id character varying NOT NULL,
+  unit character varying NOT NULL DEFAULT 'g'::character varying,
+  unit_cost numeric NOT NULL DEFAULT 0.00,
+  stock_quantity numeric DEFAULT 0,
+  min_stock_level numeric DEFAULT 10,
+  supplier character varying,
+  is_active boolean DEFAULT true,
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ingredients_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_ingredients_store FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT fk_ingredients_created_by FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
 CREATE TABLE public.inventory_movements (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   product_id uuid NOT NULL,
@@ -73,6 +111,36 @@ CREATE TABLE public.inventory_movements (
   CONSTRAINT fk_inventory_store FOREIGN KEY (store_id) REFERENCES public.stores(id),
   CONSTRAINT fk_inventory_created_by FOREIGN KEY (created_by) REFERENCES public.users(id)
 );
+CREATE TABLE public.inventory_transfers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  transfer_number character varying NOT NULL UNIQUE,
+  from_store_id character varying NOT NULL,
+  to_store_id character varying NOT NULL,
+  product_id uuid NOT NULL,
+  quantity integer NOT NULL CHECK (quantity > 0),
+  status character varying NOT NULL DEFAULT 'pending'::character varying CHECK (status::text = ANY (ARRAY['pending'::character varying, 'approved'::character varying, 'in_transit'::character varying, 'completed'::character varying, 'rejected'::character varying, 'cancelled'::character varying]::text[])),
+  requested_by uuid NOT NULL,
+  approved_by uuid,
+  received_by uuid,
+  reason text,
+  notes text,
+  rejection_reason text,
+  requested_at timestamp with time zone DEFAULT now(),
+  approved_at timestamp with time zone,
+  shipped_at timestamp with time zone,
+  received_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT inventory_transfers_pkey PRIMARY KEY (id),
+  CONSTRAINT inventory_transfers_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT inventory_transfers_from_store_id_fkey FOREIGN KEY (from_store_id) REFERENCES public.stores(id),
+  CONSTRAINT inventory_transfers_to_store_id_fkey FOREIGN KEY (to_store_id) REFERENCES public.stores(id),
+  CONSTRAINT inventory_transfers_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT inventory_transfers_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id),
+  CONSTRAINT inventory_transfers_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id),
+  CONSTRAINT inventory_transfers_received_by_fkey FOREIGN KEY (received_by) REFERENCES public.users(id)
+);
 CREATE TABLE public.payment_history (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   subscription_id uuid NOT NULL,
@@ -92,11 +160,41 @@ CREATE TABLE public.payment_history (
   CONSTRAINT payment_history_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.subscriptions(id),
   CONSTRAINT payment_history_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id)
 );
+CREATE TABLE public.product_manufacturing (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL,
+  store_id character varying NOT NULL,
+  quantity_produced integer NOT NULL,
+  batch_number character varying,
+  production_date timestamp with time zone DEFAULT now(),
+  expiry_date timestamp with time zone,
+  notes text,
+  status character varying DEFAULT 'completed'::character varying CHECK (status::text = ANY (ARRAY['pending'::character varying, 'in_progress'::character varying, 'completed'::character varying, 'cancelled'::character varying]::text[])),
+  created_by uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT product_manufacturing_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_manufacturing_product FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT fk_manufacturing_store FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT fk_manufacturing_created_by FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.product_recipes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL,
+  ingredient_id uuid NOT NULL,
+  quantity_needed numeric NOT NULL,
+  unit character varying NOT NULL,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT product_recipes_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_recipe_product FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT fk_recipe_ingredient FOREIGN KEY (ingredient_id) REFERENCES public.ingredients(id)
+);
 CREATE TABLE public.products (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name character varying NOT NULL,
   description text,
-  sku character varying UNIQUE,
+  sku character varying,
   barcode character varying,
   category_id uuid,
   store_id character varying NOT NULL,
@@ -118,6 +216,8 @@ CREATE TABLE public.products (
   created_by uuid,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  is_composite boolean DEFAULT false,
+  recipe_cost numeric DEFAULT 0.00,
   CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES public.categories(id),
   CONSTRAINT fk_products_store FOREIGN KEY (store_id) REFERENCES public.stores(id),
